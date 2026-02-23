@@ -17,18 +17,21 @@ jobs:
       matrix:
         include:
           - label: ubuntu-22.04 / gcc-12
+            artifact: ubuntu-22.04-gcc-12
             os: ubuntu-22.04
             cc: gcc-12
             cxx: g++-12
             sudo: sudo
 
           - label: ubuntu-22.04 / clang-14
+            artifact: ubuntu-22.04-clang-14
             os: ubuntu-22.04
             cc: clang-14
             cxx: clang++-14
             sudo: sudo
 
           - label: debian-12 / gcc-12
+            artifact: debian-12-gcc-12
             os: ubuntu-22.04
             container: debian:12
             cc: gcc-12
@@ -74,7 +77,7 @@ jobs:
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
-          name: gsup_map_proxy-${{ matrix.label }}
+          name: gsup_map_proxy-${{ matrix.artifact }}
           path: build/src/gsup_map_proxy
           if-no-files-found: error
           retention-days: 7
