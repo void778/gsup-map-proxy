@@ -1,4 +1,5 @@
 #include "BerCodec.hpp"
+#include <algorithm>
 #include <stdexcept>
 
 namespace proxy::map::ber {
