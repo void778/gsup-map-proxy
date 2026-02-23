@@ -56,3 +56,11 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --parallel $(nproc) --output-on-failure
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: gsup_map_proxy-${{ matrix.os }}-${{ matrix.compiler }}
+          path: build/gsup_map_proxy
+          if-no-files-found: error
+          retention-days: 7
