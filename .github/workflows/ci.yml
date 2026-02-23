@@ -8,21 +8,32 @@ on:
 
 jobs:
   build-and-test:
-    name: Build & Test (${{ matrix.os }}, ${{ matrix.compiler }})
+    name: Build & Test (${{ matrix.label }})
     runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
 
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-22.04
-            compiler: gcc
+          - label: ubuntu-22.04 / gcc-12
+            os: ubuntu-22.04
             cc: gcc-12
             cxx: g++-12
-          - os: ubuntu-22.04
-            compiler: clang
+            sudo: sudo
+
+          - label: ubuntu-22.04 / clang-14
+            os: ubuntu-22.04
             cc: clang-14
             cxx: clang++-14
+            sudo: sudo
+
+          - label: debian-12 / gcc-12
+            os: ubuntu-22.04
+            container: debian:12
+            cc: gcc-12
+            cxx: g++-12
+            sudo: ""   # root inside the container
 
     env:
       CC:  ${{ matrix.cc }}
@@ -34,8 +45,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y --no-install-recommends \
+          ${{ matrix.sudo }} apt-get update -q
+          ${{ matrix.sudo }} apt-get install -y --no-install-recommends \
+            ca-certificates \
+            git \
             cmake \
             libboost-dev \
             ${{ matrix.cc }} \
@@ -46,7 +59,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/_deps
-          key: gtest-v1.14.0-${{ matrix.os }}-${{ matrix.compiler }}
+          key: gtest-v1.14.0-${{ matrix.label }}
 
       - name: Configure
         run: cmake -B build -DBUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release
@@ -60,7 +73,7 @@ jobs:
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
-          name: gsup_map_proxy-${{ matrix.os }}-${{ matrix.compiler }}
+          name: gsup_map_proxy-${{ matrix.label }}
           path: build/gsup_map_proxy
           if-no-files-found: error
           retention-days: 7
