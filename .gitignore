@@ -1,0 +1,35 @@
+# Build directories
+build*/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Makefile
+install_manifest.txt
+compile_commands.json
+
+# Coverage artifacts
+*.gcov
+*.gcda
+*.gcno
+coverage.info
+coverage-html/
+
+# IDE / editor
+.vscode/
+.idea/
+*.xcodeproj/
+*.xcworkspace/
+.clangd/
+.cache/
+
+# macOS
+.DS_Store
+
+# Compiled binaries
+*.o
+*.a
+*.so
+*.dylib

@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    name: Build & Test (${{ matrix.os }}, ${{ matrix.compiler }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            compiler: gcc
+            cc: gcc-12
+            cxx: g++-12
+          - os: ubuntu-22.04
+            compiler: clang
+            cc: clang-14
+            cxx: clang++-14
+
+    env:
+      CC:  ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends \
+            cmake \
+            libboost-dev \
+            ${{ matrix.cc }} \
+            ${{ matrix.cxx }}
+
+      # Cache the GoogleTest FetchContent download between runs.
+      - name: Cache GoogleTest
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: gtest-v1.14.0-${{ matrix.os }}-${{ matrix.compiler }}
+
+      - name: Configure
+        run: cmake -B build -DBUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --parallel $(nproc)
+
+      - name: Test
+        run: ctest --test-dir build --parallel $(nproc) --output-on-failure
