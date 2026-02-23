@@ -71,6 +71,7 @@ public:
     // ITransport (clientId is ignored — single connection to SG)
     void send(const Bytes& mapPayload, ClientId clientId = 0) override;
     void onMessage(MessageCallback cb) override { messageCb_ = std::move(cb); }
+    void onDisconnect(DisconnectCallback cb) override { disconnectCb_ = std::move(cb); }
 
 private:
     enum class State { Disconnected, Connecting, AspUp, Active, Stopped };
@@ -105,7 +106,8 @@ private:
     std::deque<Bytes> writeQueue_;
     bool              writing_{false};
 
-    MessageCallback   messageCb_;
+    MessageCallback    messageCb_;
+    DisconnectCallback disconnectCb_;
 };
 
 } // namespace proxy::transport

@@ -1,5 +1,5 @@
 #include "transport/IpaSession.hpp"
-#include <iostream>
+#include <spdlog/spdlog.h>
 
 namespace proxy::transport {
 
@@ -58,7 +58,7 @@ void IpaSession::doWrite() {
                 self->writeQueue_.pop_front();
                 self->doWrite();
             } else if (self->state_ != State::Stopped) {
-                std::cerr << "[IpaSession] write error: " << ec.message() << "\n";
+                spdlog::error("[IpaSession] write error: {}", ec.message());
                 self->state_ = State::Stopped;
                 if (self->onDisconnect_) self->onDisconnect_();
             }

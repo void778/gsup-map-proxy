@@ -1,12 +1,14 @@
 #include "proxy/Proxy.hpp"
-#include <iostream>
+#include <spdlog/spdlog.h>
 
 namespace proxy {
 
 Proxy::Proxy(std::shared_ptr<ITransport> sgsnTransport,
-             std::shared_ptr<ITransport> hlrTransport)
+             std::shared_ptr<ITransport> hlrTransport,
+             std::chrono::seconds txTimeout)
     : sgsnTransport_(std::move(sgsnTransport))
     , hlrTransport_(std::move(hlrTransport))
+    , txMgr_(txTimeout)
 {}
 
 void Proxy::start() {
@@ -18,6 +20,10 @@ void Proxy::start() {
     hlrTransport_->onMessage([this](const Bytes& mapPayload, ClientId /*id*/) {
         handleMapPayload(mapPayload);
     });
+    // When the HLR transport disconnects, NAK all pending SGSN transactions.
+    hlrTransport_->onDisconnect([this]() {
+        nackAllPendingTransactions();
+    });
 }
 
 void Proxy::handleGsupPayload(const Bytes& gsupPayload, uint64_t clientContext) {
@@ -25,7 +31,7 @@ void Proxy::handleGsupPayload(const Bytes& gsupPayload, uint64_t clientContext) 
     try {
         gsupMsg = gsup::decode(gsupPayload);
     } catch (const std::exception& e) {
-        std::cerr << "[proxy] GSUP decode error: " << e.what() << "\n";
+        spdlog::error("[proxy] GSUP decode error: {}", e.what());
         return;
     }
 
@@ -43,7 +49,7 @@ void Proxy::handleGsupPayload(const Bytes& gsupPayload, uint64_t clientContext) 
     try {
         mapMsg = gsupToMap(gsupMsg, tid, invoke);
     } catch (const ConversionError& e) {
-        std::cerr << "[proxy] Conversion error (GSUP→MAP): " << e.what() << "\n";
+        spdlog::warn("[proxy] Conversion error (GSUP->MAP): {}", e.what());
         txMgr_.complete(tid);
         return;
     }
@@ -56,7 +62,7 @@ void Proxy::handleGsupPayload(const Bytes& gsupPayload, uint64_t clientContext) 
     try {
         mapData = map::encode(mapMsg);
     } catch (const std::exception& e) {
-        std::cerr << "[proxy] MAP encode error: " << e.what() << "\n";
+        spdlog::error("[proxy] MAP encode error: {}", e.what());
         txMgr_.complete(tid);
         pendingOps_.erase(tid);
         return;
@@ -70,7 +76,7 @@ void Proxy::handleMapPayload(const Bytes& mapPayload) {
     try {
         mapMsg = map::decode(mapPayload);
     } catch (const std::exception& e) {
-        std::cerr << "[proxy] MAP decode error: " << e.what() << "\n";
+        spdlog::error("[proxy] MAP decode error: {}", e.what());
         return;
     }
 
@@ -83,8 +89,7 @@ void Proxy::handleMapPayload(const Bytes& mapPayload) {
     // SGSN-initiated: MAP ReturnResult/ReturnError from the HLR
     auto pending = txMgr_.find(mapMsg.transactionId);
     if (!pending) {
-        std::cerr << "[proxy] No pending transaction for TID "
-                  << mapMsg.transactionId << "\n";
+        spdlog::warn("[proxy] No pending transaction for TID {}", mapMsg.transactionId);
         return;
     }
 
@@ -101,7 +106,7 @@ void Proxy::handleMapPayload(const Bytes& mapPayload) {
     try {
         gsupMsg = mapToGsup(mapMsg);
     } catch (const ConversionError& e) {
-        std::cerr << "[proxy] Conversion error (MAP→GSUP): " << e.what() << "\n";
+        spdlog::warn("[proxy] Conversion error (MAP->GSUP): {}", e.what());
         txMgr_.complete(mapMsg.transactionId);
         pendingOps_.erase(mapMsg.transactionId);
         return;
@@ -115,7 +120,7 @@ void Proxy::handleMapPayload(const Bytes& mapPayload) {
     try {
         gsupData = gsup::encode(gsupMsg);
     } catch (const std::exception& e) {
-        std::cerr << "[proxy] GSUP encode error: " << e.what() << "\n";
+        spdlog::error("[proxy] GSUP encode error: {}", e.what());
         return;
     }
 
@@ -130,7 +135,7 @@ void Proxy::handleHlrInitiated(const map::MapMessage& mapMsg) {
     try {
         gsupMsg = mapInvokeToGsup(mapMsg);
     } catch (const ConversionError& e) {
-        std::cerr << "[proxy] Conversion error (MAP Invoke→GSUP): " << e.what() << "\n";
+        spdlog::warn("[proxy] Conversion error (MAP Invoke->GSUP): {}", e.what());
         return;
     }
 
@@ -146,7 +151,7 @@ void Proxy::handleHlrInitiated(const map::MapMessage& mapMsg) {
     try {
         gsupData = gsup::encode(gsupMsg);
     } catch (const std::exception& e) {
-        std::cerr << "[proxy] GSUP encode error (HLR-initiated): " << e.what() << "\n";
+        spdlog::error("[proxy] GSUP encode error (HLR-initiated): {}", e.what());
         hlrTx_.erase(gsupMsg.imsi);
         return;
     }
@@ -157,7 +162,7 @@ void Proxy::handleHlrInitiated(const map::MapMessage& mapMsg) {
 void Proxy::handleGsupHlrResponse(const gsup::GsupMessage& gsupMsg) {
     auto it = hlrTx_.find(gsupMsg.imsi);
     if (it == hlrTx_.end()) {
-        std::cerr << "[proxy] No HLR-initiated transaction for IMSI " << gsupMsg.imsi << "\n";
+        spdlog::warn("[proxy] No HLR-initiated transaction for IMSI {}", gsupMsg.imsi);
         return;
     }
 
@@ -166,7 +171,7 @@ void Proxy::handleGsupHlrResponse(const gsup::GsupMessage& gsupMsg) {
     try {
         mapMsg = gsupToMapResult(gsupMsg, entry.mapTransactionId, entry.mapInvokeId);
     } catch (const ConversionError& e) {
-        std::cerr << "[proxy] Conversion error (GSUP→MAP result): " << e.what() << "\n";
+        spdlog::warn("[proxy] Conversion error (GSUP->MAP result): {}", e.what());
         hlrTx_.erase(it);
         return;
     }
@@ -177,7 +182,7 @@ void Proxy::handleGsupHlrResponse(const gsup::GsupMessage& gsupMsg) {
     try {
         mapData = map::encode(mapMsg);
     } catch (const std::exception& e) {
-        std::cerr << "[proxy] MAP encode error (HLR-initiated response): " << e.what() << "\n";
+        spdlog::error("[proxy] MAP encode error (HLR-initiated response): {}", e.what());
         return;
     }
 
@@ -188,12 +193,55 @@ void Proxy::expireHlrTransactions(std::chrono::seconds timeout) {
     const auto now = std::chrono::steady_clock::now();
     for (auto it = hlrTx_.begin(); it != hlrTx_.end(); ) {
         if (now - it->second.createdAt > timeout) {
-            std::cerr << "[proxy] HLR-initiated transaction expired for IMSI "
-                      << it->first << "\n";
+            spdlog::warn("[proxy] HLR-initiated transaction expired for IMSI {}", it->first);
             it = hlrTx_.erase(it);
         } else {
             ++it;
         }
+    }
+}
+
+void Proxy::nackAllPendingTransactions() {
+    for (auto& [tid, op] : pendingOps_) {
+        auto pending = txMgr_.find(tid);
+        if (!pending) continue;
+
+        map::MapMessage errMsg;
+        errMsg.transactionId = tid;
+        errMsg.operation     = op;
+        errMsg.component     = map::ComponentType::ReturnError;
+        errMsg.imsi          = pending->imsi;
+
+        try {
+            auto gsupMsg  = mapToGsup(errMsg);
+            auto gsupData = gsup::encode(gsupMsg);
+            sgsnTransport_->send(gsupData, pending->clientContext);
+        } catch (const std::exception&) {}
+
+        txMgr_.complete(tid);
+    }
+    pendingOps_.clear();
+}
+
+void Proxy::expireSgsnTransactions() {
+    auto expired = txMgr_.expireStale();
+    for (auto& tx : expired) {
+        auto it = pendingOps_.find(tx.mapTransactionId);
+        if (it == pendingOps_.end()) continue;
+
+        map::MapMessage errMsg;
+        errMsg.transactionId = tx.mapTransactionId;
+        errMsg.operation     = it->second;
+        errMsg.component     = map::ComponentType::ReturnError;
+        errMsg.imsi          = tx.imsi;
+
+        try {
+            auto gsupMsg  = mapToGsup(errMsg);
+            auto gsupData = gsup::encode(gsupMsg);
+            sgsnTransport_->send(gsupData, tx.clientContext);
+        } catch (const std::exception&) {}
+
+        pendingOps_.erase(it);
     }
 }
 

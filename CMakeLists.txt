@@ -23,6 +23,19 @@ endif()
 find_package(Threads REQUIRED)
 # Boost.Asio is header-only since Boost 1.74; no compiled component needed.
 find_package(Boost 1.71 REQUIRED)
+
+# ── spdlog (structured logging) ───────────────────────────────────────────────
+include(FetchContent)
+FetchContent_Declare(
+  spdlog
+  GIT_REPOSITORY https://github.com/gabime/spdlog.git
+  GIT_TAG        v1.13.0
+  GIT_SHALLOW    TRUE
+  GIT_SUBMODULES ""
+)
+set(SPDLOG_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(spdlog)
 # Provide a header-only interface target for transport_lib.
 if(NOT TARGET Boost::headers)
   add_library(Boost::headers INTERFACE IMPORTED)
@@ -31,7 +44,6 @@ if(NOT TARGET Boost::headers)
 endif()
 
 if(BUILD_TESTS)
-  include(FetchContent)
   FetchContent_Declare(
     googletest
     GIT_REPOSITORY https://github.com/google/googletest.git

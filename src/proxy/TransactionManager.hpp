@@ -36,8 +36,8 @@ public:
     // Remove a transaction after receiving the response.
     void complete(uint32_t mapTransactionId);
 
-    // Expire stale transactions; returns the expired client contexts.
-    std::vector<uint64_t> expireStale();
+    // Expire stale transactions; returns the full PendingTransaction records.
+    std::vector<PendingTransaction> expireStale();
 
     size_t size() const { return transactions_.size(); }
 

@@ -38,12 +38,12 @@ void TransactionManager::complete(uint32_t mapTransactionId) {
     transactions_.erase(mapTransactionId);
 }
 
-std::vector<uint64_t> TransactionManager::expireStale() {
+std::vector<PendingTransaction> TransactionManager::expireStale() {
     auto now = std::chrono::steady_clock::now();
-    std::vector<uint64_t> expired;
+    std::vector<PendingTransaction> expired;
     for (auto it = transactions_.begin(); it != transactions_.end(); ) {
         if (now - it->second.createdAt > timeout_) {
-            expired.push_back(it->second.clientContext);
+            expired.push_back(it->second);
             it = transactions_.erase(it);
         } else {
             ++it;

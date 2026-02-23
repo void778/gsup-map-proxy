@@ -1,6 +1,7 @@
 # gsup-map-proxy
 
 [![CI](https://github.com/void778/gsup-map-proxy/actions/workflows/ci.yml/badge.svg)](https://github.com/void778/gsup-map-proxy/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/void778/gsup-map-proxy/branch/main/graph/badge.svg)](https://codecov.io/gh/void778/gsup-map-proxy)
 
 A C++17 proxy that bridges **osmoSGSN** (speaking GSUP over IPA) to a real
 **HLR** (speaking MAP/TCAP/SCCP over M3UA/SCTP or TCP).

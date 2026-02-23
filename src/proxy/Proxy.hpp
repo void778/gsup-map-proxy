@@ -33,7 +33,8 @@ struct HlrTxEntry {
 class Proxy {
 public:
     explicit Proxy(std::shared_ptr<ITransport> sgsnTransport,
-                   std::shared_ptr<ITransport> hlrTransport);
+                   std::shared_ptr<ITransport> hlrTransport,
+                   std::chrono::seconds txTimeout = std::chrono::seconds{30});
 
     // Wire up callbacks and start processing.
     void start();
@@ -50,6 +51,13 @@ public:
     void expireHlrTransactions(std::chrono::seconds timeout = std::chrono::seconds{30});
 
     size_t hlrTxSize() const { return hlrTx_.size(); }
+
+    // Send ReturnError GSUP responses for all pending SGSN-initiated transactions
+    // and clear them.  Called when the HLR transport disconnects.
+    void nackAllPendingTransactions();
+
+    // Expire stale SGSN-initiated transactions and send error responses.
+    void expireSgsnTransactions();
 
 private:
     // HLR-initiated direction: MAP Invoke → GSUP Request → SGSN.

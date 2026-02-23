@@ -3,7 +3,7 @@
 #include "transport/MapTransport.hpp"
 
 #include <boost/asio.hpp>
-#include <iostream>
+#include <spdlog/spdlog.h>
 #include <memory>
 #include <csignal>
 
@@ -37,6 +37,9 @@ int main(int argc, char* argv[]) {
     if (argc > 5) dpc        = static_cast<uint32_t>(std::stoul(argv[5]));
     if (argc > 6) hlrGt      = argv[6];
     if (argc > 7) localGt    = argv[7];
+
+    spdlog::set_level(spdlog::level::info);
+    spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%l] %v");
 
     asio::io_context ioc;
     gIoc = &ioc;
@@ -75,13 +78,13 @@ int main(int argc, char* argv[]) {
     std::signal(SIGINT,  onSignal);
     std::signal(SIGTERM, onSignal);
 
-    std::cout << "GSUP-MAP proxy\n"
-              << "  SGSN port : " << listenPort << "\n"
-              << "  HLR SG    : " << sgHost << ":" << sgPort << "\n"
-              << "Press Ctrl+C to stop.\n";
+    spdlog::info("GSUP-MAP proxy starting");
+    spdlog::info("  SGSN port : {}", listenPort);
+    spdlog::info("  HLR SG    : {}:{}", sgHost, sgPort);
+    spdlog::info("Press Ctrl+C to stop");
 
     ioc.run();
 
-    std::cout << "Proxy stopped.\n";
+    spdlog::info("Proxy stopped");
     return 0;
 }

@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <map>
 #include "proxy/Proxy.hpp"
 #include "gsup/GsupCodec.hpp"
 #include "map/MapCodec.hpp"
@@ -330,4 +331,76 @@ TEST_F(ProxyTest, HlrTxExpiryRemovesStaleEntries) {
     // Expire with 0-second timeout — everything is immediately stale.
     proxy_->expireHlrTransactions(std::chrono::seconds(0));
     EXPECT_EQ(proxy_->hlrTxSize(), 0u);
+}
+
+TEST_F(ProxyTest, HlrDisconnectNacksAllPendingTransactions) {
+    // Queue two pending SGSN-initiated requests
+    gsup::GsupMessage req1;
+    req1.type = gsup::MessageType::SendAuthInfoRequest;
+    req1.imsi = "262019111111111";
+    req1.numVectorsRequested = 1;
+    proxy_->handleGsupPayload(gsup::encode(req1), /*clientId=*/7);
+
+    gsup::GsupMessage req2;
+    req2.type = gsup::MessageType::UpdateLocationRequest;
+    req2.imsi = "262019222222222";
+    proxy_->handleGsupPayload(gsup::encode(req2), /*clientId=*/8);
+
+    ASSERT_EQ(hlr_->sent.size(), 2u);
+    ASSERT_EQ(sgsn_->sent.size(), 0u);
+
+    // Simulate HLR disconnect — NAK all pending transactions
+    proxy_->nackAllPendingTransactions();
+
+    // Both SGSN clients should get errors
+    ASSERT_EQ(sgsn_->sent.size(), 2u);
+
+    // Collect errors by clientId
+    std::map<ClientId, gsup::MessageType> errors;
+    for (auto& s : sgsn_->sent)
+        errors[s.clientId] = gsup::decode(s.data).type;
+
+    EXPECT_EQ(errors[7], gsup::MessageType::SendAuthInfoError);
+    EXPECT_EQ(errors[8], gsup::MessageType::UpdateLocationError);
+
+    // After nack, no pending transactions remain
+    EXPECT_EQ(proxy_->transactions().size(), 0u);
+}
+
+TEST_F(ProxyTest, ExpireSgsnTransactionsSendsGsupError) {
+    // Create a proxy with a zero timeout so transactions expire immediately.
+    auto sgsn = std::make_shared<MockTransport>();
+    auto hlr  = std::make_shared<MockTransport>();
+    Proxy shortProxy(sgsn, hlr, std::chrono::seconds{0});
+    shortProxy.start();
+
+    gsup::GsupMessage req;
+    req.type = gsup::MessageType::SendAuthInfoRequest;
+    req.imsi = "262019444444444";
+    req.numVectorsRequested = 1;
+    shortProxy.handleGsupPayload(gsup::encode(req), /*clientId=*/5);
+    ASSERT_EQ(shortProxy.transactions().size(), 1u);
+
+    // All transactions are instantly stale with 0s timeout.
+    shortProxy.expireSgsnTransactions();
+
+    ASSERT_EQ(sgsn->sent.size(), 1u);
+    auto gsupResp = gsup::decode(sgsn->sent[0].data);
+    EXPECT_EQ(gsupResp.type, gsup::MessageType::SendAuthInfoError);
+    EXPECT_EQ(sgsn->sent[0].clientId, 5u);
+    EXPECT_EQ(shortProxy.transactions().size(), 0u);
+}
+
+TEST_F(ProxyTest, ExpireSgsnTransactionsWithNoExpiredDoesNothing) {
+    gsup::GsupMessage req;
+    req.type = gsup::MessageType::SendAuthInfoRequest;
+    req.imsi = "262019333333333";
+    req.numVectorsRequested = 1;
+    proxy_->handleGsupPayload(gsup::encode(req), /*clientId=*/9);
+    ASSERT_EQ(proxy_->transactions().size(), 1u);
+
+    // Default timeout is 30s — nothing should expire
+    proxy_->expireSgsnTransactions();
+    EXPECT_EQ(sgsn_->sent.size(), 0u);
+    EXPECT_EQ(proxy_->transactions().size(), 1u);
 }

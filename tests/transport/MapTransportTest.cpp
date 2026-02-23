@@ -304,12 +304,12 @@ struct StandaloneEnv {
 TEST(MapTransportStandaloneTest, HeartbeatIsSentAndAcked) {
     StandaloneEnv env;
     auto cfg = env.makeCfg();
-    cfg.beatInterval = std::chrono::seconds(0); // fire immediately after ACTIVE
+    cfg.beatInterval = std::chrono::seconds(1); // short but non-zero (seconds(0) starves io_context on Linux)
     env.transport = std::make_unique<MapTransport>(env.ioc, cfg);
     env.transport->start();
 
     ASSERT_TRUE(env.waitForActive());
-    EXPECT_TRUE(env.sg->waitForHeartbeat(std::chrono::seconds(2)));
+    EXPECT_TRUE(env.sg->waitForHeartbeat(std::chrono::seconds(5)));
     EXPECT_GE(env.sg->heartbeatsReceived(), 1);
     env.teardown();
 }

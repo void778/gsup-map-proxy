@@ -10,7 +10,7 @@ add_library(proxy_lib STATIC
 )
 
 target_include_directories(proxy_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(proxy_lib PUBLIC Threads::Threads)
+target_link_libraries(proxy_lib PUBLIC Threads::Threads spdlog::spdlog)
 
 # ── IPA transport (requires Boost.Asio) ──────────────────────────────────────
 add_library(transport_lib STATIC

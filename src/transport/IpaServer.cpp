@@ -1,5 +1,5 @@
 #include "transport/IpaServer.hpp"
-#include <iostream>
+#include <spdlog/spdlog.h>
 
 namespace proxy::transport {
 
@@ -45,12 +45,13 @@ void IpaServer::acceptNext() {
         [this](bsys::error_code ec, asio::ip::tcp::socket socket) {
             if (ec) {
                 if (ec != asio::error::operation_aborted)
-                    std::cerr << "[IpaServer] accept error: " << ec.message() << "\n";
+                    spdlog::error("[IpaServer] accept error: {}", ec.message());
                 return;
             }
 
-            std::cout << "[IpaServer] connection from "
-                      << socket.remote_endpoint() << "\n";
+            spdlog::info("[IpaServer] connection from {}:{}",
+                         socket.remote_endpoint().address().to_string(),
+                         socket.remote_endpoint().port());
 
             ClientId id = nextClientId_++;
             auto session = std::make_shared<IpaSession>(std::move(socket));
@@ -69,13 +70,13 @@ void IpaServer::onSessionReady(ClientId id) {
     auto it = allSessions_.find(id);
     if (it == allSessions_.end()) return;
     sessions_[id] = it->second;
-    std::cout << "[IpaServer] CCM handshake complete, session " << id << " ready\n";
+    spdlog::info("[IpaServer] CCM handshake complete, session {} ready", id);
 }
 
 void IpaServer::onSessionDisconnect(ClientId id) {
     sessions_.erase(id);
     allSessions_.erase(id);
-    std::cout << "[IpaServer] session " << id << " disconnected\n";
+    spdlog::info("[IpaServer] session {} disconnected", id);
 }
 
 } // namespace proxy::transport

@@ -8,6 +8,7 @@
 #include <boost/asio.hpp>
 #include <thread>
 #include <chrono>
+#include <future>
 #include <mutex>
 #include <condition_variable>
 #include <vector>
@@ -107,9 +108,8 @@ protected:
     }
 
     void TearDown() override {
-        // Stop server first (closes acceptor + active session).
         asio::post(ioc_, [this] { server_->stop(); });
-        work_.reset();          // allow io_context::run() to return
+        work_.reset();
         ioc_.stop();
         if (ioThread_.joinable()) ioThread_.join();
     }
@@ -359,7 +359,6 @@ TEST_F(IpaServerTest, TwoSimultaneousSessionsCoexist) {
 
     EXPECT_TRUE(server_->hasActiveSession());
     // Query sessionCount on the io_context thread to avoid data races.
-    std::size_t count = 0;
     std::promise<std::size_t> p;
     auto f = p.get_future();
     asio::post(ioc_, [this, &p] { p.set_value(server_->sessionCount()); });
@@ -451,3 +450,4 @@ TEST_F(IpaServerTest, SendToSpecificClientId) {
     // client1: confirm nothing arrives (non-blocking check by setting short timeout).
     // We rely on the test passing without hanging as evidence client1 got nothing.
 }
+

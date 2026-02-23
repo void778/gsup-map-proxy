@@ -76,10 +76,12 @@ TEST(TransactionManagerTest, ExpireStaleReturnsContexts) {
     auto expired = mgr.expireStale();
     EXPECT_EQ(expired.size(), 2u);
     EXPECT_EQ(mgr.size(), 0u);
-    // Both contexts should be returned
-    std::sort(expired.begin(), expired.end());
-    EXPECT_EQ(expired[0], 111u);
-    EXPECT_EQ(expired[1], 222u);
+    // Both client contexts should be present
+    std::vector<uint64_t> contexts;
+    for (auto& tx : expired) contexts.push_back(tx.clientContext);
+    std::sort(contexts.begin(), contexts.end());
+    EXPECT_EQ(contexts[0], 111u);
+    EXPECT_EQ(contexts[1], 222u);
 }
 
 TEST(TransactionManagerTest, ExpireStaleDoesNotRemoveFresh) {
