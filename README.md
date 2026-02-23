@@ -297,13 +297,13 @@ Add `-DCMAKE_BUILD_TYPE=Release` for an optimised binary (default is `Debug`).
 cmake --build build --parallel
 ```
 
-The main binary is built at `build/gsup_map_proxy`.
+The main binary is built at `build/src/gsup_map_proxy`.
 Test binaries land in `build/tests/`.
 
 **3. Verify the build**
 
 ```bash
-ls build/gsup_map_proxy build/tests/
+ls build/src/gsup_map_proxy build/tests/
 ```
 
 ### Build variants
@@ -334,7 +334,7 @@ genhtml coverage.info --output-directory coverage-html
 ## Running
 
 ```
-build/gsup_map_proxy [listenPort [sgHost [sgPort [opc [dpc [hlrGt [localGt]]]]]]]
+build/src/gsup_map_proxy [listenPort [sgHost [sgPort [opc [dpc [hlrGt [localGt]]]]]]]
 ```
 
 | Argument | Default | Description |
@@ -350,7 +350,7 @@ build/gsup_map_proxy [listenPort [sgHost [sgPort [opc [dpc [hlrGt [localGt]]]]]]
 **Example — connect to a Signalling Gateway at 192.168.1.10:**
 
 ```bash
-./build/gsup_map_proxy 4222 192.168.1.10 2905 100 200 +4916100000 +4916100001
+./build/src/gsup_map_proxy 4222 192.168.1.10 2905 100 200 +4916100000 +4916100001
 ```
 
 The proxy runs a single-threaded Boost.Asio event loop. Send `SIGINT` or

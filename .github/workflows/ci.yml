@@ -50,6 +50,7 @@ jobs:
             ca-certificates \
             git \
             cmake \
+            make \
             libboost-dev \
             ${{ matrix.cc }} \
             ${{ matrix.cxx }}
@@ -74,6 +75,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: gsup_map_proxy-${{ matrix.label }}
-          path: build/gsup_map_proxy
+          path: build/src/gsup_map_proxy
           if-no-files-found: error
           retention-days: 7
