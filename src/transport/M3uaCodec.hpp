@@ -17,8 +17,8 @@ struct CommonHeader {
 
 // Protocol Data TLV payload (inside DATA message)
 struct ProtocolData {
-    uint32_t opc;
-    uint32_t dpc;
+    uint32_t opc = 0;
+    uint32_t dpc = 0;
     uint8_t  si  = kSiSccp;
     uint8_t  ni  = kNiInternational;
     uint8_t  mp  = 0;
