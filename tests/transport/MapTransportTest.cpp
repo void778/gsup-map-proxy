@@ -161,7 +161,7 @@ protected:
         cfg.reconnectInterval = std::chrono::seconds(1);
         cfg.beatInterval    = std::chrono::seconds(60); // long — don't fire in tests
 
-        transport_ = std::make_unique<MapTransport>(ioc_, cfg);
+        transport_ = std::make_shared<MapTransport>(ioc_, cfg);
         transport_->start();
     }
 
@@ -192,7 +192,7 @@ protected:
     asio::io_context ioc_;
     std::unique_ptr<asio::executor_work_guard<asio::io_context::executor_type>> work_;
     std::unique_ptr<MockSG>          sg_;
-    std::unique_ptr<MapTransport>    transport_;
+    std::shared_ptr<MapTransport>    transport_;
     std::thread                      ioThread_;
 };
 
@@ -264,7 +264,7 @@ struct StandaloneEnv {
         std::make_unique<asio::executor_work_guard<asio::io_context::executor_type>>(
             ioc.get_executor())};
     std::unique_ptr<MockSG> sg{std::make_unique<MockSG>(ioc)};
-    std::unique_ptr<MapTransport> transport;
+    std::shared_ptr<MapTransport> transport;
     std::thread ioThread{[this]{ ioc.run(); }};
 
     MapTransportConfig makeCfg() {
@@ -305,7 +305,7 @@ TEST(MapTransportStandaloneTest, HeartbeatIsSentAndAcked) {
     StandaloneEnv env;
     auto cfg = env.makeCfg();
     cfg.beatInterval = std::chrono::seconds(1); // short but non-zero (seconds(0) starves io_context on Linux)
-    env.transport = std::make_unique<MapTransport>(env.ioc, cfg);
+    env.transport = std::make_shared<MapTransport>(env.ioc, cfg);
     env.transport->start();
 
     ASSERT_TRUE(env.waitForActive());
@@ -319,7 +319,7 @@ TEST(MapTransportStandaloneTest, SctpFallbackWarningWhenNotCompiled) {
     StandaloneEnv env;
     auto cfg = env.makeCfg();
     cfg.useSCTP = true;
-    env.transport = std::make_unique<MapTransport>(env.ioc, cfg);
+    env.transport = std::make_shared<MapTransport>(env.ioc, cfg);
     env.transport->start();
 
     EXPECT_TRUE(env.waitForActive());

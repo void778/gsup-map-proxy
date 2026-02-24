@@ -75,6 +75,11 @@ inline M3uaMessage makeData(ProtocolData pd, std::optional<uint32_t> rc = std::n
     return {kClassTransf, kTypeData, rc, std::move(pd), {}};
 }
 
+// Maximum accepted M3UA message size (64 KiB). Messages claiming to be
+// larger are almost certainly malformed/malicious; the decoder resets its
+// buffer and throws std::runtime_error.
+static constexpr std::size_t kMaxM3uaMessageSize = 64u * 1024u;
+
 // Stateful stream reassembler (same pattern as IpaDecoder)
 class M3uaDecoder {
 public:

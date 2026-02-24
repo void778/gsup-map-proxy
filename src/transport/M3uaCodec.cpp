@@ -159,6 +159,11 @@ std::optional<M3uaMessage> M3uaDecoder::next() {
         (uint32_t(buf_[4]) << 24) | (uint32_t(buf_[5]) << 16) |
         (uint32_t(buf_[6]) <<  8) |  uint32_t(buf_[7]);
 
+    if (totalLen > kMaxM3uaMessageSize) {
+        buf_.clear();
+        throw std::runtime_error("M3UA: oversized message (possible DoS)");
+    }
+
     if (buf_.size() < totalLen) return std::nullopt;
 
     Bytes msg(buf_.begin(), buf_.begin() + totalLen);

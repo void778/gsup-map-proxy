@@ -32,6 +32,13 @@ std::optional<IpaFrame> IpaDecoder::next() {
     if (wireLen == 0)
         throw std::runtime_error("IPA: zero-length wire frame");
 
+    // Reject oversized frames before allocating (uint16_t caps at 65535, but
+    // GSUP messages should never be that large; drop clearly bad frames early).
+    if (wireLen > kMaxIpaWireLen) {
+        buf_.clear();
+        throw std::runtime_error("IPA: oversized frame (possible DoS)");
+    }
+
     // wireLen includes the stream byte, so payload = wireLen - 1
     size_t totalSize = kHeaderSize + static_cast<size_t>(wireLen) - 1;
     if (buf_.size() < totalSize)

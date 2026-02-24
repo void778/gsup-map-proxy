@@ -11,6 +11,7 @@ jobs:
     name: Build & Test (${{ matrix.label }})
     runs-on: ${{ matrix.os }}
     container: ${{ matrix.container }}
+    timeout-minutes: 15
 
     strategy:
       fail-fast: false
@@ -72,7 +73,7 @@ jobs:
         run: cmake --build build --parallel $(nproc)
 
       - name: Test
-        run: ctest --test-dir build --parallel $(nproc) --output-on-failure
+        run: ctest --test-dir build --parallel $(nproc) --output-on-failure --timeout 60
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
@@ -86,6 +87,7 @@ jobs:
   coverage:
     name: Coverage
     runs-on: ubuntu-22.04
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -118,7 +120,7 @@ jobs:
         run: cmake --build build --parallel $(nproc)
 
       - name: Test
-        run: ctest --test-dir build --parallel 1 --output-on-failure
+        run: ctest --test-dir build --parallel 1 --output-on-failure --timeout 60
 
       - name: Collect coverage
         run: |
@@ -141,6 +143,7 @@ jobs:
   static-analysis:
     name: Static Analysis (clang-tidy)
     runs-on: ubuntu-22.04
+    timeout-minutes: 15
 
     steps:
       - name: Checkout

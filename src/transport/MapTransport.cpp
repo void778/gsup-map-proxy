@@ -43,9 +43,9 @@ void MapTransport::scheduleConnect() {
             ? std::chrono::seconds(0)         // first attempt: immediate
             : cfg_.reconnectInterval);
 
-    reconnectTimer_.async_wait([this](bsys::error_code ec) {
-        if (!ec && state_ != State::Stopped)
-            connect();
+    reconnectTimer_.async_wait([self = shared_from_this()](bsys::error_code ec) {
+        if (!ec && self->state_ != State::Stopped)
+            self->connect();
     });
 }
 
@@ -58,7 +58,7 @@ void MapTransport::connect() {
     auto results = resolver.resolve(cfg_.sgHost, std::to_string(cfg_.sgPort), ec);
     if (ec || results.empty()) {
         if (!ec) ec = asio::error::host_not_found;
-        asio::post(ioc_, [this, ec]{ onConnect(ec); });
+        asio::post(ioc_, [self = shared_from_this(), ec]{ self->onConnect(ec); });
         return;
     }
     const auto tcpEp = results.begin()->endpoint();
@@ -76,25 +76,31 @@ void MapTransport::connect() {
         socket_.open(asio::generic::stream_protocol(family, IPPROTO_SCTP), ec);
         if (ec) {
             spdlog::error("[MapTransport] SCTP open failed: {}", ec.message());
-            asio::post(ioc_, [this, ec]{ onConnect(ec); });
+            asio::post(ioc_, [self = shared_from_this(), ec]{ self->onConnect(ec); });
             return;
         }
     } else {
-        socket_.open(asio::ip::tcp::v4(), ec);
-        if (ec) { asio::post(ioc_, [this, ec]{ onConnect(ec); }); return; }
+        const int family = tcpEp.address().is_v6() ? AF_INET6 : AF_INET;
+        socket_.open(asio::generic::stream_protocol(family, IPPROTO_TCP), ec);
+        if (ec) { asio::post(ioc_, [self = shared_from_this(), ec]{ self->onConnect(ec); }); return; }
     }
 #else
     if (cfg_.useSCTP) {
         spdlog::warn("[MapTransport] SCTP requested but ENABLE_SCTP_TRANSPORT "
                      "was not set at build time -- falling back to TCP");
     }
-    socket_.open(asio::ip::tcp::v4(), ec);
-    if (ec) { asio::post(ioc_, [this, ec]{ onConnect(ec); }); return; }
+    {
+        const int family = tcpEp.address().is_v6() ? AF_INET6 : AF_INET;
+        socket_.open(asio::generic::stream_protocol(family, IPPROTO_TCP), ec);
+    }
+    if (ec) { asio::post(ioc_, [self = shared_from_this(), ec]{ self->onConnect(ec); }); return; }
 #endif
 
     // Convert the TCP endpoint to a generic one (same sockaddr layout).
     asio::generic::stream_protocol::endpoint genEp(tcpEp.data(), tcpEp.size());
-    socket_.async_connect(genEp, [this](bsys::error_code ec2) { onConnect(ec2); });
+    socket_.async_connect(genEp, [self = shared_from_this()](bsys::error_code ec2) {
+        self->onConnect(ec2);
+    });
 }
 
 void MapTransport::resetConnection() {
@@ -131,8 +137,8 @@ void MapTransport::sendAspAc() {
 
 void MapTransport::startBeat() {
     beatTimer_.expires_after(cfg_.beatInterval);
-    beatTimer_.async_wait([this](bsys::error_code ec) {
-        if (!ec && state_ != State::Stopped) onBeat();
+    beatTimer_.async_wait([self = shared_from_this()](bsys::error_code ec) {
+        if (!ec && self->state_ != State::Stopped) self->onBeat();
     });
 }
 
@@ -190,8 +196,8 @@ void MapTransport::processMessage(const M3uaMessage& msg) {
 
 void MapTransport::send(const Bytes& mapPayload, ClientId /*clientId*/) {
     auto payload = mapPayload;
-    asio::post(ioc_, [this, payload = std::move(payload)]() mutable {
-        if (state_ != State::Active) {
+    asio::post(ioc_, [self = shared_from_this(), payload = std::move(payload)]() mutable {
+        if (self->state_ != State::Active) {
             spdlog::warn("[MapTransport] send() called but not ACTIVE -- dropped");
             return;
         }
@@ -199,21 +205,21 @@ void MapTransport::send(const Bytes& mapPayload, ClientId /*clientId*/) {
         // Wrap MAP in SCCP UDT
         SccpUdt udt;
         udt.protocolClass = kProtoClass0;
-        udt.calledParty   = makeGtAddress(cfg_.hlrGt, cfg_.hlrSsn, true);
-        udt.callingParty  = makeGtAddress(cfg_.localGt, cfg_.localSsn, true);
+        udt.calledParty   = makeGtAddress(self->cfg_.hlrGt, self->cfg_.hlrSsn, true);
+        udt.callingParty  = makeGtAddress(self->cfg_.localGt, self->cfg_.localSsn, true);
         udt.data          = payload;
         Bytes sccpFrame   = encodeUdt(udt);
 
         // Wrap SCCP in M3UA DATA
         ProtocolData pd;
-        pd.opc      = cfg_.opc;
-        pd.dpc      = cfg_.dpc;
+        pd.opc      = self->cfg_.opc;
+        pd.dpc      = self->cfg_.dpc;
         pd.si       = kSiSccp;
         pd.ni       = kNiInternational;
         pd.sls      = 0;
         pd.userData = std::move(sccpFrame);
 
-        sendRaw(makeData(std::move(pd), cfg_.routingContext));
+        self->sendRaw(makeData(std::move(pd), self->cfg_.routingContext));
     });
 }
 
@@ -233,18 +239,18 @@ void MapTransport::doWrite() {
     }
     writing_ = true;
     asio::async_write(socket_, asio::buffer(writeQueue_.front()),
-        [this](bsys::error_code ec, std::size_t) {
+        [self = shared_from_this()](bsys::error_code ec, std::size_t) {
             if (!ec) {
-                writeQueue_.pop_front();
-                doWrite();
-            } else if (state_ != State::Stopped) {
+                self->writeQueue_.pop_front();
+                self->doWrite();
+            } else if (self->state_ != State::Stopped) {
                 spdlog::error("[MapTransport] write error: {}", ec.message());
-                state_ = State::Disconnected;
-                resetConnection();
+                self->state_ = State::Disconnected;
+                self->resetConnection();
                 bsys::error_code ignore;
-                socket_.close(ignore);
-                if (disconnectCb_) disconnectCb_();
-                scheduleConnect();
+                self->socket_.close(ignore);
+                if (self->disconnectCb_) self->disconnectCb_();
+                self->scheduleConnect();
             }
         });
 }
@@ -253,30 +259,30 @@ void MapTransport::doWrite() {
 
 void MapTransport::startRead() {
     socket_.async_read_some(asio::buffer(readBuf_),
-        [this](bsys::error_code ec, std::size_t n) {
+        [self = shared_from_this()](bsys::error_code ec, std::size_t n) {
             if (ec) {
-                if (state_ != State::Stopped) {
+                if (self->state_ != State::Stopped) {
                     spdlog::error("[MapTransport] read error: {}", ec.message());
-                    state_ = State::Disconnected;
-                    beatTimer_.cancel();
-                    resetConnection();
+                    self->state_ = State::Disconnected;
+                    self->beatTimer_.cancel();
+                    self->resetConnection();
                     bsys::error_code ignore;
-                    socket_.close(ignore);
-                    if (disconnectCb_) disconnectCb_();
-                    scheduleConnect();
+                    self->socket_.close(ignore);
+                    if (self->disconnectCb_) self->disconnectCb_();
+                    self->scheduleConnect();
                 }
                 return;
             }
-            decoder_.feed(readBuf_.data(), n);
-            while (auto msg = decoder_.next()) {
+            self->decoder_.feed(self->readBuf_.data(), n);
+            while (auto msg = self->decoder_.next()) {
                 try {
-                    processMessage(*msg);
+                    self->processMessage(*msg);
                 } catch (const std::exception& e) {
                     spdlog::error("[MapTransport] processMessage: {}", e.what());
                 }
             }
-            if (state_ != State::Stopped && state_ != State::Disconnected)
-                startRead();
+            if (self->state_ != State::Stopped && self->state_ != State::Disconnected)
+                self->startRead();
         });
 }
 

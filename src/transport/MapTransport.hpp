@@ -9,6 +9,7 @@
 #include <deque>
 #include <memory>
 #include <string>
+#include <stdexcept>
 
 namespace asio = boost::asio;
 namespace bsys = boost::system;
@@ -60,7 +61,8 @@ struct MapTransportConfig {
 //   start() / stop() must be called before io_context::run().
 //   send() is safe to call from any thread (posts to io_context).
 
-class MapTransport : public ITransport {
+class MapTransport : public ITransport,
+                     public std::enable_shared_from_this<MapTransport> {
 public:
     MapTransport(asio::io_context& ioc, MapTransportConfig cfg);
     ~MapTransport() override;

@@ -4,6 +4,11 @@
 
 namespace proxy::ipa {
 
+// Maximum accepted IPA wire-length field value.  The wire-length includes the
+// 1-byte stream ID, so the maximum payload is kMaxIpaWireLen-1 bytes.
+// Frames claiming a larger size are rejected to prevent buffer exhaustion.
+static constexpr uint16_t kMaxIpaWireLen = 4096u;
+
 // Encode a single IPA frame to wire format.
 Bytes encode(uint8_t streamId, const Bytes& payload);
 

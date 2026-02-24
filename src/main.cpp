@@ -30,6 +30,8 @@ int main(int argc, char* argv[]) {
     std::string hlrGt      = "+49161000000";
     std::string localGt    = "+49161000001";
 
+    std::optional<uint32_t> routingContext;
+
     if (argc > 1) listenPort = static_cast<uint16_t>(std::stoi(argv[1]));
     if (argc > 2) sgHost     = argv[2];
     if (argc > 3) sgPort     = static_cast<uint16_t>(std::stoi(argv[3]));
@@ -37,6 +39,7 @@ int main(int argc, char* argv[]) {
     if (argc > 5) dpc        = static_cast<uint32_t>(std::stoul(argv[5]));
     if (argc > 6) hlrGt      = argv[6];
     if (argc > 7) localGt    = argv[7];
+    if (argc > 8) routingContext = static_cast<uint32_t>(std::stoul(argv[8]));
 
     spdlog::set_level(spdlog::level::info);
     spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%l] %v");
@@ -49,12 +52,13 @@ int main(int argc, char* argv[]) {
 
     // HLR-facing transport (M3UA/SCCP/MAP over TCP to Signalling Gateway)
     MapTransportConfig mapCfg;
-    mapCfg.sgHost    = sgHost;
-    mapCfg.sgPort    = sgPort;
-    mapCfg.opc       = opc;
-    mapCfg.dpc       = dpc;
-    mapCfg.hlrGt     = hlrGt;
-    mapCfg.localGt   = localGt;
+    mapCfg.sgHost          = sgHost;
+    mapCfg.sgPort          = sgPort;
+    mapCfg.opc             = opc;
+    mapCfg.dpc             = dpc;
+    mapCfg.hlrGt           = hlrGt;
+    mapCfg.localGt         = localGt;
+    mapCfg.routingContext  = routingContext;
     auto hlrTransport = std::make_shared<MapTransport>(ioc, mapCfg);
 
     Proxy proxy(sgsnTransport, hlrTransport);
@@ -81,6 +85,8 @@ int main(int argc, char* argv[]) {
     spdlog::info("GSUP-MAP proxy starting");
     spdlog::info("  SGSN port : {}", listenPort);
     spdlog::info("  HLR SG    : {}:{}", sgHost, sgPort);
+    if (routingContext)
+        spdlog::info("  Routing ctx: {}", *routingContext);
     spdlog::info("Press Ctrl+C to stop");
 
     ioc.run();
