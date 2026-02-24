@@ -280,6 +280,7 @@ DeleteSubscriberData, and PurgeMS (HLR-initiated Invokes).
 | CMake | ≥ 3.16 | |
 | Boost | ≥ 1.71 | Header-only (Boost.Asio); no compiled libraries needed |
 | GoogleTest | any | Fetched automatically via CMake `FetchContent` |
+| spdlog | v1.13.0 | Fetched automatically via CMake `FetchContent` |
 
 ### Step-by-step build
 
@@ -335,23 +336,24 @@ genhtml coverage.info --output-directory coverage-html
 ## Running
 
 ```
-build/src/gsup_map_proxy [listenPort [sgHost [sgPort [opc [dpc [hlrGt [localGt]]]]]]]
+build/src/gsup_map_proxy [listenPort [sgHost [sgPort [opc [dpc [hlrGt [localGt [routingContext]]]]]]]]]
 ```
 
 | Argument | Default | Description |
 |---|---|---|
 | `listenPort` | 4222 | TCP port to accept IPA connections from SGSNs |
-| `sgHost` | 127.0.0.1 | Signalling Gateway hostname/IP |
+| `sgHost` | 127.0.0.1 | Signalling Gateway hostname/IP (IPv4 or IPv6) |
 | `sgPort` | 2905 | M3UA port on the Signalling Gateway |
 | `opc` | 1 | Originating Point Code (this proxy) |
 | `dpc` | 2 | Destination Point Code (HLR) |
 | `hlrGt` | +49161000000 | HLR Global Title (E.164) |
 | `localGt` | +49161000001 | Proxy local Global Title |
+| `routingContext` | _(none)_ | M3UA Routing Context value (required by some SS7 hardware) |
 
-**Example — connect to a Signalling Gateway at 192.168.1.10:**
+**Example — connect to a Signalling Gateway at 192.168.1.10 with routing context 1:**
 
 ```bash
-./build/src/gsup_map_proxy 4222 192.168.1.10 2905 100 200 +4916100000 +4916100001
+./build/src/gsup_map_proxy 4222 192.168.1.10 2905 100 200 +4916100000 +4916100001 1
 ```
 
 The proxy runs a single-threaded Boost.Asio event loop. Send `SIGINT` or
@@ -397,8 +399,8 @@ ctest --test-dir build --parallel 4
 Expected output:
 
 ```
-100% tests passed, 0 tests failed out of 188
-Total Test time (real) =   0.75 sec
+100% tests passed, 0 tests failed out of 191
+Total Test time (real) =   3.xx sec
 ```
 
 ### Run a single test binary
@@ -437,7 +439,7 @@ ls build/tests/
 | `map_transport_test` | M3UA state machine, heartbeat | Transport |
 | `proxy_end_to_end_test` | Full stack with mock SG | Integration |
 
-**188 tests total — 100% passing.**
+**191 tests total — 100% passing.**
 
 ### End-to-end test architecture
 
@@ -454,23 +456,15 @@ ProxyEndToEndTest fixture
 
 ## Code Coverage
 
-Coverage measured with `--coverage` (Apple LLVM 17 / gcov), 188 tests:
+Coverage is measured on every CI run using gcov + lcov and uploaded to
+Codecov automatically. See the badge at the top of this file for the
+current percentage, or browse per-file details at:
 
-| File | Coverage | Lines |
-|---|---|---|
-| `proxy/TransactionManager.cpp` | **100.0%** | 38 |
-| `map/BerCodec.cpp` | **97.8%** | 89 |
-| `proxy/Converter.cpp` | **95.9%** | 145 |
-| `transport/M3uaCodec.cpp` | **95.7%** | 116 |
-| `map/MapCodec.cpp` | **94.0%** | 401 |
-| `ipa/IpaCodec.cpp` | **93.6%** | 31 |
-| `transport/ScccpCodec.cpp` | **91.8%** | 159 |
-| `proxy/Proxy.cpp` | **84.9%** | 126 |
-| `gsup/GsupCodec.cpp` | **85.1%** | 215 |
-| `transport/IpaSession.cpp` | **86.2%** | 94 |
-| `transport/IpaServer.cpp` | **81.0%** | 58 |
-| `transport/MapTransport.cpp` | **78.5%** | 186 |
-| **Overall** | **89.9%** | **1658** |
+> https://codecov.io/gh/void778/gsup-map-proxy
+
+The CI coverage job builds with `--coverage -O0` using gcc-12, runs all
+191 tests, then uploads `src/**` line coverage only (third-party headers
+and generated code are excluded).
 
 Uncovered lines are almost exclusively error-recovery paths that require
 simulated TCP write failures, connection drops, or DNS resolution failures —
