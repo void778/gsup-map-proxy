@@ -407,10 +407,13 @@ TEST_F(IpaServerTest, SendToSpecificClientId) {
     std::mutex mtx;
     std::condition_variable cv;
 
-    server_->onMessage([&](const Bytes&, ClientId id) {
+    // Map each message's IMSI to its ClientId so the assignment is
+    // deterministic regardless of which message arrives first on CI.
+    server_->onMessage([&](const Bytes& data, ClientId id) {
+        auto msg = gsup::decode(data);
         std::lock_guard lock(mtx);
-        if (client1Id == 0) client1Id = id;
-        else                client2Id = id;
+        if (msg.imsi == "000000000000001") client1Id = id;
+        else if (msg.imsi == "000000000000002") client2Id = id;
         cv.notify_all();
     });
 
@@ -419,7 +422,8 @@ TEST_F(IpaServerTest, SendToSpecificClientId) {
     TestClient client2(port_);
     client2.doHandshake();
 
-    // Each client sends one message so the server learns both ids.
+    // Each client sends one message with a unique IMSI so the server can
+    // identify which ClientId belongs to which TestClient.
     gsup::GsupMessage ping;
     ping.type = gsup::MessageType::UpdateLocationRequest;
     ping.imsi = "000000000000001";
