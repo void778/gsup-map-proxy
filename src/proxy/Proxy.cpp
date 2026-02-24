@@ -3,6 +3,44 @@
 
 namespace proxy {
 
+// ── Logging helpers ───────────────────────────────────────────────────────────
+
+static const char* opName(map::MapOperation op) {
+    switch (op) {
+        case map::MapOperation::SendAuthenticationInfo: return "SendAuthInfo";
+        case map::MapOperation::UpdateGprsLocation:     return "UpdateGprsLocation";
+        case map::MapOperation::CancelLocation:         return "CancelLocation";
+        case map::MapOperation::InsertSubscriberData:   return "InsertSubscriberData";
+        case map::MapOperation::DeleteSubscriberData:   return "DeleteSubscriberData";
+        case map::MapOperation::PurgeMS:                return "PurgeMS";
+        default:                                        return "Unknown";
+    }
+}
+
+static const char* gsupTypeName(gsup::MessageType t) {
+    switch (t) {
+        case gsup::MessageType::SendAuthInfoRequest:    return "SAI-REQ";
+        case gsup::MessageType::SendAuthInfoResult:     return "SAI-RES";
+        case gsup::MessageType::SendAuthInfoError:      return "SAI-ERR";
+        case gsup::MessageType::UpdateLocationRequest:  return "UL-REQ";
+        case gsup::MessageType::UpdateLocationResult:   return "UL-RES";
+        case gsup::MessageType::UpdateLocationError:    return "UL-ERR";
+        case gsup::MessageType::LocationCancelRequest:  return "LC-REQ";
+        case gsup::MessageType::LocationCancelResult:   return "LC-RES";
+        case gsup::MessageType::LocationCancelError:    return "LC-ERR";
+        case gsup::MessageType::InsertDataRequest:      return "ISD-REQ";
+        case gsup::MessageType::InsertDataResult:       return "ISD-RES";
+        case gsup::MessageType::InsertDataError:        return "ISD-ERR";
+        case gsup::MessageType::DeleteDataRequest:      return "DSD-REQ";
+        case gsup::MessageType::DeleteDataResult:       return "DSD-RES";
+        case gsup::MessageType::DeleteDataError:        return "DSD-ERR";
+        case gsup::MessageType::PurgeMsRequest:         return "PURGE-REQ";
+        case gsup::MessageType::PurgeMsResult:          return "PURGE-RES";
+        case gsup::MessageType::PurgeMsError:           return "PURGE-ERR";
+        default:                                        return "UNKNOWN";
+    }
+}
+
 Proxy::Proxy(std::shared_ptr<ITransport> sgsnTransport,
              std::shared_ptr<ITransport> hlrTransport,
              std::chrono::seconds txTimeout)
@@ -35,6 +73,8 @@ void Proxy::handleGsupPayload(const Bytes& gsupPayload, uint64_t clientContext) 
         return;
     }
 
+    spdlog::debug("[proxy] GSUP rx: {} IMSI={} client={}", gsupTypeName(gsupMsg.type), gsupMsg.imsi, clientContext);
+
     // HLR-initiated responses (SGSN replying to InsertSubscriberData or CancelLocation)
     if (isHlrInitiatedGsupType(gsupMsg.type)) {
         handleGsupHlrResponse(gsupMsg);
@@ -44,6 +84,7 @@ void Proxy::handleGsupPayload(const Bytes& gsupPayload, uint64_t clientContext) 
     // SGSN-initiated requests
     uint32_t tid    = txMgr_.allocate(gsupMsg.imsi, clientContext);
     uint8_t  invoke = txMgr_.find(tid)->mapInvokeId;
+    spdlog::debug("[proxy] TX alloc: TID={:#010x} invokeId={} IMSI={} client={}", tid, invoke, gsupMsg.imsi, clientContext);
 
     map::MapMessage mapMsg;
     try {
@@ -53,6 +94,7 @@ void Proxy::handleGsupPayload(const Bytes& gsupPayload, uint64_t clientContext) 
         txMgr_.complete(tid);
         return;
     }
+    spdlog::debug("[proxy] GSUP {} → MAP {} (TID={:#010x})", gsupTypeName(gsupMsg.type), opName(mapMsg.operation), tid);
 
     // Remember the MAP operation so ReturnError responses (which carry no
     // operation code on the wire) can still be routed to the right GSUP type.
@@ -68,6 +110,7 @@ void Proxy::handleGsupPayload(const Bytes& gsupPayload, uint64_t clientContext) 
         return;
     }
 
+    spdlog::debug("[proxy] MAP {} sent to HLR ({} bytes)", opName(mapMsg.operation), mapData.size());
     hlrTransport_->send(mapData);
 }
 
@@ -80,6 +123,8 @@ void Proxy::handleMapPayload(const Bytes& mapPayload) {
         return;
     }
 
+    spdlog::debug("[proxy] MAP rx: op={} TID={:#010x} IMSI={} component={}", opName(mapMsg.operation), mapMsg.transactionId, mapMsg.imsi, static_cast<int>(mapMsg.component));
+
     // HLR-initiated: MAP Invoke from the HLR toward the SGSN
     if (mapMsg.component == map::ComponentType::Invoke) {
         handleHlrInitiated(mapMsg);
@@ -89,7 +134,7 @@ void Proxy::handleMapPayload(const Bytes& mapPayload) {
     // SGSN-initiated: MAP ReturnResult/ReturnError from the HLR
     auto pending = txMgr_.find(mapMsg.transactionId);
     if (!pending) {
-        spdlog::warn("[proxy] No pending transaction for TID {}", mapMsg.transactionId);
+        spdlog::warn("[proxy] No pending transaction for TID {:#010x}", mapMsg.transactionId);
         return;
     }
 
@@ -113,6 +158,7 @@ void Proxy::handleMapPayload(const Bytes& mapPayload) {
     }
 
     ClientId clientId = pending->clientContext;
+    spdlog::debug("[proxy] MAP {} → GSUP {} (TID={:#010x} → client={})", opName(mapMsg.operation), gsupTypeName(gsupMsg.type), mapMsg.transactionId, clientId);
     pendingOps_.erase(mapMsg.transactionId);
     txMgr_.complete(mapMsg.transactionId);
 
@@ -131,6 +177,7 @@ void Proxy::handleMapPayload(const Bytes& mapPayload) {
 // ── HLR-initiated direction ───────────────────────────────────────────────────
 
 void Proxy::handleHlrInitiated(const map::MapMessage& mapMsg) {
+    spdlog::debug("[proxy] HLR-initiated MAP Invoke: op={} TID={:#010x} IMSI={}", opName(mapMsg.operation), mapMsg.transactionId, mapMsg.imsi);
     gsup::GsupMessage gsupMsg;
     try {
         gsupMsg = mapInvokeToGsup(mapMsg);
@@ -138,6 +185,7 @@ void Proxy::handleHlrInitiated(const map::MapMessage& mapMsg) {
         spdlog::warn("[proxy] Conversion error (MAP Invoke->GSUP): {}", e.what());
         return;
     }
+    spdlog::debug("[proxy] HLR Invoke → GSUP {} IMSI={}", gsupTypeName(gsupMsg.type), gsupMsg.imsi);
 
     // Track the HLR transaction by IMSI so the SGSN response can be matched.
     HlrTxEntry entry;
@@ -202,6 +250,7 @@ void Proxy::expireHlrTransactions(std::chrono::seconds timeout) {
 }
 
 void Proxy::nackAllPendingTransactions() {
+    spdlog::info("[proxy] HLR disconnected — NAKing {} pending transaction(s)", pendingOps_.size());
     for (auto& [tid, op] : pendingOps_) {
         auto pending = txMgr_.find(tid);
         if (!pending) continue;
@@ -225,7 +274,10 @@ void Proxy::nackAllPendingTransactions() {
 
 void Proxy::expireSgsnTransactions() {
     auto expired = txMgr_.expireStale();
+    if (!expired.empty())
+        spdlog::info("[proxy] Expiring {} timed-out SGSN transaction(s)", expired.size());
     for (auto& tx : expired) {
+        spdlog::debug("[proxy] TX expired: TID={:#010x} IMSI={} client={}", tx.mapTransactionId, tx.imsi, tx.clientContext);
         auto it = pendingOps_.find(tx.mapTransactionId);
         if (it == pendingOps_.end()) continue;
 

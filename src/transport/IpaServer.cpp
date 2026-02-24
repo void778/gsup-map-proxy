@@ -30,12 +30,17 @@ void IpaServer::send(const Bytes& gsupPayload, ClientId clientId) {
     asio::post(ioc_, [this, payload = std::move(payload), clientId]() {
         if (clientId == 0) {
             // Broadcast to all active sessions
+            spdlog::debug("[IpaServer] broadcast GSUP ({} bytes) to {} session(s)", payload.size(), sessions_.size());
             for (auto& [id, session] : sessions_)
                 if (session->isReady()) session->sendGsup(payload);
         } else {
             auto it = sessions_.find(clientId);
-            if (it != sessions_.end() && it->second->isReady())
+            if (it != sessions_.end() && it->second->isReady()) {
+                spdlog::debug("[IpaServer] send GSUP ({} bytes) to client={}", payload.size(), clientId);
                 it->second->sendGsup(payload);
+            } else {
+                spdlog::warn("[IpaServer] send: client={} not found or not ready — dropped", clientId);
+            }
         }
     });
 }

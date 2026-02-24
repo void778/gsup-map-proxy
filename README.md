@@ -630,6 +630,45 @@ build/src/gsup_map_proxy [listenPort [sgHost [sgPort [opc [dpc [hlrGt [localGt [
 The proxy runs a single-threaded Boost.Asio event loop. Send `SIGINT` or
 `SIGTERM` to stop gracefully.
 
+### Logging
+
+The proxy uses [spdlog](https://github.com/gabime/spdlog) and writes
+timestamped log lines to **stderr**.
+
+**Runtime log level** is controlled by the `GSUP_LOG_LEVEL` environment
+variable (case-insensitive). If the variable is not set the level defaults
+to `info`.
+
+| Level | When to use |
+|---|---|
+| `error` | Only show errors |
+| `warn` | Errors + warnings (unroutable messages, missing transactions) |
+| `info` | Normal operation: connect/disconnect, ASPUP/ASPAC, session lifecycle _(default)_ |
+| `debug` | Per-message flow: GSUP type, TID allocation, MAP encoding/decoding, routing decisions |
+| `trace` | High-frequency events: heartbeats, CCM PING/PONG |
+
+```bash
+# Verbose session debug
+GSUP_LOG_LEVEL=debug ./build/src/gsup_map_proxy ...
+
+# Trace everything (heartbeats etc.)
+GSUP_LOG_LEVEL=trace ./build/src/gsup_map_proxy ...
+
+# Quiet operation
+GSUP_LOG_LEVEL=warn  ./build/src/gsup_map_proxy ...
+```
+
+At `debug` level each transaction prints a line for every major step:
+
+```
+[proxy] GSUP rx: UL-REQ IMSI=262010000000001 client=1
+[proxy] TX alloc: TID=0x3a7c1b04 invokeId=1 IMSI=262010000000001 client=1
+[proxy] GSUP UL-REQ → MAP UpdateGprsLocation (TID=0x3a7c1b04)
+[MapTransport] DATA received: OPC=1 DPC=2 payload=87 bytes
+[proxy] MAP rx: op=UpdateGprsLocation TID=0x3a7c1b04 IMSI=262010000000001 component=1
+[proxy] MAP UpdateGprsLocation → GSUP UL-RES (TID=0x3a7c1b04 → client=1)
+```
+
 ---
 
 ## Configuration Reference

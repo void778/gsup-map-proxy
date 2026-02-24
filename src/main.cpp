@@ -6,6 +6,7 @@
 #include <spdlog/spdlog.h>
 #include <memory>
 #include <csignal>
+#include <cstdlib>
 
 namespace asio = boost::asio;
 using namespace proxy;
@@ -41,7 +42,11 @@ int main(int argc, char* argv[]) {
     if (argc > 7) localGt    = argv[7];
     if (argc > 8) routingContext = static_cast<uint32_t>(std::stoul(argv[8]));
 
-    spdlog::set_level(spdlog::level::info);
+    // Allow runtime log level via GSUP_LOG_LEVEL=trace|debug|info|warn|error
+    if (const char* lvl = std::getenv("GSUP_LOG_LEVEL"))
+        spdlog::set_level(spdlog::level::from_str(lvl));
+    else
+        spdlog::set_level(spdlog::level::info);
     spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%l] %v");
 
     asio::io_context ioc;
@@ -71,7 +76,7 @@ int main(int argc, char* argv[]) {
     std::function<void(boost::system::error_code)> tick;
     tick = [&](boost::system::error_code ec) {
         if (ec) return;
-        proxy.transactions().expireStale();
+        proxy.expireSgsnTransactions();
         proxy.expireHlrTransactions();
         expiryTimer.expires_after(std::chrono::seconds(5));
         expiryTimer.async_wait(tick);
@@ -83,8 +88,10 @@ int main(int argc, char* argv[]) {
     std::signal(SIGTERM, onSignal);
 
     spdlog::info("GSUP-MAP proxy starting");
-    spdlog::info("  SGSN port : {}", listenPort);
-    spdlog::info("  HLR SG    : {}:{}", sgHost, sgPort);
+    spdlog::info("  SGSN port  : {}", listenPort);
+    spdlog::info("  HLR SG     : {}:{}", sgHost, sgPort);
+    spdlog::info("  OPC={} DPC={}", opc, dpc);
+    spdlog::info("  HLR GT={} Local GT={}", hlrGt, localGt);
     if (routingContext)
         spdlog::info("  Routing ctx: {}", *routingContext);
     spdlog::info("Press Ctrl+C to stop");

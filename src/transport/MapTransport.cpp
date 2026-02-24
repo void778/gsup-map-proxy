@@ -51,6 +51,7 @@ void MapTransport::scheduleConnect() {
 
 void MapTransport::connect() {
     state_ = State::Connecting;
+    spdlog::debug("[MapTransport] resolving {}:{}", cfg_.sgHost, cfg_.sgPort);
 
     // Resolve the host synchronously so the endpoint outlives the async op.
     bsys::error_code ec;
@@ -58,10 +59,12 @@ void MapTransport::connect() {
     auto results = resolver.resolve(cfg_.sgHost, std::to_string(cfg_.sgPort), ec);
     if (ec || results.empty()) {
         if (!ec) ec = asio::error::host_not_found;
+        spdlog::warn("[MapTransport] DNS resolve failed: {}", ec.message());
         asio::post(ioc_, [self = shared_from_this(), ec]{ self->onConnect(ec); });
         return;
     }
     const auto tcpEp = results.begin()->endpoint();
+    spdlog::debug("[MapTransport] resolved to {}", tcpEp.address().to_string());
 
     // Ensure the socket is closed before (re)opening with a new protocol.
     if (socket_.is_open()) {
@@ -104,6 +107,7 @@ void MapTransport::connect() {
 }
 
 void MapTransport::resetConnection() {
+    spdlog::debug("[MapTransport] resetting connection state (queue={} pending)", writeQueue_.size());
     writeQueue_.clear();
     writing_ = false;
     decoder_ = m3ua::M3uaDecoder{}; // discard partial data from old connection
@@ -144,6 +148,7 @@ void MapTransport::startBeat() {
 
 void MapTransport::onBeat() {
     if (state_ != State::Active) return;
+    spdlog::trace("[MapTransport] heartbeat sent");
     sendRaw(makeHeartbeat());
     startBeat();
 }
@@ -172,6 +177,7 @@ void MapTransport::processMessage(const M3uaMessage& msg) {
 
     // ASPSM: Heartbeat Ack (ignore)
     if (msg.msgClass == kClassAspsm && msg.msgType == kTypeHeartbeatAck) {
+        spdlog::trace("[MapTransport] heartbeat ack received");
         return;
     }
 
@@ -181,9 +187,12 @@ void MapTransport::processMessage(const M3uaMessage& msg) {
         const auto& pd = *msg.protocolData;
         if (pd.si != kSiSccp) return;
 
+        spdlog::debug("[MapTransport] DATA received: OPC={} DPC={} payload={} bytes", pd.opc, pd.dpc, pd.userData.size());
+
         // Unwrap SCCP UDT to get MAP payload
         try {
             auto udt = decodeUdt(pd.userData);
+            spdlog::debug("[MapTransport] SCCP UDT decoded: MAP payload={} bytes", udt.data.size());
             if (messageCb_) messageCb_(udt.data, 0);
         } catch (const std::exception& e) {
             spdlog::error("[MapTransport] SCCP decode error: {}", e.what());

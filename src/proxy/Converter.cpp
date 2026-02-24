@@ -1,4 +1,5 @@
 #include "Converter.hpp"
+#include <spdlog/spdlog.h>
 
 namespace proxy {
 
@@ -8,6 +9,7 @@ using namespace map;
 // ── GSUP → MAP ───────────────────────────────────────────────────────────────
 
 MapMessage gsupToMap(const GsupMessage& gsup, uint32_t transactionId, uint8_t invokeId) {
+    spdlog::debug("[converter] gsupToMap: type={} IMSI={} TID={:#010x}", static_cast<int>(gsup.type), gsup.imsi, transactionId);
     MapMessage m;
     m.transactionId = transactionId;
     m.invokeId      = invokeId;
@@ -55,6 +57,7 @@ MapMessage gsupToMap(const GsupMessage& gsup, uint32_t transactionId, uint8_t in
 // ── MAP → GSUP ───────────────────────────────────────────────────────────────
 
 GsupMessage mapToGsup(const MapMessage& map) {
+    spdlog::debug("[converter] mapToGsup: op={} component={} IMSI={} TID={:#010x}", static_cast<int>(map.operation), static_cast<int>(map.component), map.imsi, map.transactionId);
     GsupMessage g;
     g.imsi = map.imsi;
 
@@ -140,6 +143,7 @@ GsupMessage mapToGsup(const MapMessage& map) {
 // ── MAP Invoke → GSUP Request (HLR-initiated) ────────────────────────────────
 
 GsupMessage mapInvokeToGsup(const MapMessage& map) {
+    spdlog::debug("[converter] mapInvokeToGsup: op={} IMSI={} TID={:#010x}", static_cast<int>(map.operation), map.imsi, map.transactionId);
     if (map.component != ComponentType::Invoke)
         throw ConversionError("mapInvokeToGsup: expected Invoke component");
 
@@ -179,6 +183,7 @@ GsupMessage mapInvokeToGsup(const MapMessage& map) {
 // ── GSUP Result → MAP ReturnResult (HLR-initiated response) ──────────────────
 
 MapMessage gsupToMapResult(const GsupMessage& gsup, uint32_t transactionId, uint8_t invokeId) {
+    spdlog::debug("[converter] gsupToMapResult: type={} IMSI={} TID={:#010x}", static_cast<int>(gsup.type), gsup.imsi, transactionId);
     MapMessage m;
     m.transactionId   = transactionId;
     m.invokeId        = invokeId;

@@ -89,6 +89,7 @@ void IpaSession::processFrame(const ipa::IpaFrame& frame) {
     if (frame.streamId == ipa::kStreamCcm) {
         handleCcm(frame.payload);
     } else if (frame.streamId == ipa::kStreamGsup && state_ == State::Ready) {
+        spdlog::debug("[IpaSession] GSUP frame dispatched ({} bytes)", frame.payload.size());
         if (onGsup_) onGsup_(frame.payload);
     }
 }
@@ -99,9 +100,11 @@ void IpaSession::handleCcm(const Bytes& payload) {
         case ipa::kCcmIdResp:
             sendCcmIdAck();
             state_ = State::Ready;
+            spdlog::debug("[IpaSession] CCM handshake complete → Ready");
             if (onReady_) onReady_();
             break;
         case ipa::kCcmPing:
+            spdlog::trace("[IpaSession] CCM PING → PONG");
             sendCcmPong();
             break;
         case ipa::kCcmIdAck:
