@@ -1,0 +1,13 @@
+coverage:
+  status:
+    project:
+      default:
+        target: auto      # pass if coverage doesn't drop
+    patch:
+      default:
+        target: auto
+
+ignore:
+  - "build/**"       # cmake build artefacts
+  - "tests/**"       # test sources don't count toward coverage
+  - "_deps/**"       # FetchContent dependencies

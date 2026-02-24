@@ -132,6 +132,7 @@ jobs:
                "$(pwd)/src/*" \
                --output-file coverage.info
           lcov --list coverage.info
+          rm coverage_raw.info   # prevent Codecov auto-discovery of unfiltered file
 
       - name: Upload to Codecov
         uses: codecov/codecov-action@v4
