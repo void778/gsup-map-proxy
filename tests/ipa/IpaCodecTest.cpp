@@ -102,3 +102,51 @@ TEST(IpaDecodeTest, RoundTripLargerPayload) {
     ASSERT_TRUE(frame.has_value());
     EXPECT_EQ(frame->payload, payload);
 }
+
+// ── Edge cases ────────────────────────────────────────────────────────────────
+
+// wireLen == 0 must throw immediately.
+TEST(IpaDecodeTest, ZeroWireLenThrows) {
+    Bytes bad = {0x00, 0x00, kStreamGsup};
+    IpaDecoder dec;
+    dec.feed(bad);
+    EXPECT_THROW(dec.next(), std::runtime_error);
+}
+
+// wireLen > kMaxIpaWireLen must throw and clear the buffer.
+TEST(IpaDecodeTest, OversizedFrameThrows) {
+    // wireLen = kMaxIpaWireLen + 1
+    uint16_t bigLen = static_cast<uint16_t>(kMaxIpaWireLen + 1u);
+    Bytes bad = {static_cast<uint8_t>(bigLen >> 8), static_cast<uint8_t>(bigLen & 0xFF), kStreamGsup};
+    IpaDecoder dec;
+    dec.feed(bad);
+    EXPECT_THROW(dec.next(), std::runtime_error);
+    // Buffer must be cleared — a subsequent feed/next should wait for new data.
+    EXPECT_FALSE(dec.next().has_value());
+}
+
+// A frame right at the limit (kMaxIpaWireLen) must be accepted.
+TEST(IpaDecodeTest, FrameAtMaxSizeAccepted) {
+    // payload size = kMaxIpaWireLen - 1  (wireLen includes 1 stream byte)
+    Bytes payload(kMaxIpaWireLen - 1u, 0xAB);
+    auto wire = encode(kStreamGsup, payload);
+    IpaDecoder dec;
+    dec.feed(wire);
+    auto frame = dec.next();
+    ASSERT_TRUE(frame.has_value());
+    EXPECT_EQ(frame->payload.size(), payload.size());
+}
+
+// encode() must throw for a payload that would overflow uint16_t.
+TEST(IpaEncodeTest, TooLargePayloadThrows) {
+    Bytes huge(0x10000, 0x00); // 65536 bytes — exceeds uint16_t limit
+    EXPECT_THROW(encode(kStreamGsup, huge), std::invalid_argument);
+}
+
+// Feeding an empty span should be a no-op: next() returns nullopt.
+TEST(IpaDecodeTest, EmptyFeedIsNoop) {
+    IpaDecoder dec;
+    Bytes empty;
+    dec.feed(empty.data(), 0);
+    EXPECT_FALSE(dec.next().has_value());
+}

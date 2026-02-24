@@ -404,3 +404,114 @@ TEST_F(ProxyTest, ExpireSgsnTransactionsWithNoExpiredDoesNothing) {
     EXPECT_EQ(sgsn_->sent.size(), 0u);
     EXPECT_EQ(proxy_->transactions().size(), 1u);
 }
+
+// ── Edge cases ────────────────────────────────────────────────────────────────
+
+// nackAllPendingTransactions with zero pending transactions must be a no-op.
+TEST_F(ProxyTest, NackAllWithNoPendingIsNoop) {
+    EXPECT_EQ(proxy_->transactions().size(), 0u);
+    EXPECT_NO_THROW(proxy_->nackAllPendingTransactions());
+    EXPECT_TRUE(sgsn_->sent.empty());
+}
+
+// expireSgsnTransactions with zero pending transactions must be a no-op.
+TEST_F(ProxyTest, ExpireWithNoPendingIsNoop) {
+    auto sgsn = std::make_shared<MockTransport>();
+    auto hlr  = std::make_shared<MockTransport>();
+    Proxy shortProxy(sgsn, hlr, std::chrono::seconds{0});
+    shortProxy.start();
+    EXPECT_NO_THROW(shortProxy.expireSgsnTransactions());
+    EXPECT_TRUE(sgsn->sent.empty());
+}
+
+// Two different SGSNs may have transactions in flight simultaneously; both
+// must be correctly NAKed when the HLR disconnects.
+TEST_F(ProxyTest, NackAllWithMultipleClientIdsSendsToEach) {
+    gsup::GsupMessage req1;
+    req1.type = gsup::MessageType::SendAuthInfoRequest;
+    req1.imsi = "262019111111111";
+    req1.numVectorsRequested = 1;
+    proxy_->handleGsupPayload(gsup::encode(req1), 3);
+
+    gsup::GsupMessage req2;
+    req2.type = gsup::MessageType::UpdateLocationRequest;
+    req2.imsi = "262019222222222";
+    proxy_->handleGsupPayload(gsup::encode(req2), 4);
+
+    gsup::GsupMessage req3;
+    req3.type = gsup::MessageType::SendAuthInfoRequest;
+    req3.imsi = "262019333333333";
+    req3.numVectorsRequested = 1;
+    proxy_->handleGsupPayload(gsup::encode(req3), 3); // same client as req1
+
+    proxy_->nackAllPendingTransactions();
+
+    EXPECT_EQ(sgsn_->sent.size(), 3u);
+    EXPECT_EQ(proxy_->transactions().size(), 0u);
+}
+
+// MAP ReturnError arriving for a TID not in pendingOps_ (operation Unknown)
+// must be dropped gracefully without crashing.
+TEST_F(ProxyTest, ReturnErrorWithNoRecoveryDropsGracefully) {
+    // Send a request so a TID is allocated.
+    proxy_->handleGsupPayload(makeSendAuthInfoReq("262019876543210"), 1);
+    auto mapMsg = map::decode(hlr_->sent[0].data);
+
+    // Manually erase the pendingOps_ entry to simulate no recovery info.
+    // We can't access pendingOps_ directly — instead send a ReturnError
+    // with operation=Unknown, which would fail conversion.
+    // The proxy recovers op from pendingOps_; if we first complete via a
+    // ReturnResult then send a second ReturnError for the same (now gone) TID,
+    // it should be dropped (no pending transaction).
+    MapMessage result;
+    result.transactionId = mapMsg.transactionId;
+    result.component     = ComponentType::ReturnResult;
+    result.operation     = MapOperation::SendAuthenticationInfo;
+    result.imsi          = "262019876543210";
+    MapAuthTriplet t;
+    t.rand = Bytes(16, 0); t.sres = Bytes(4, 0); t.kc = Bytes(8, 0);
+    result.authTriplets.push_back(t);
+    proxy_->handleMapPayload(map::encode(result)); // completes the tx
+
+    // Now send ReturnError for the same (already completed) TID.
+    MapMessage err;
+    err.transactionId = mapMsg.transactionId;
+    err.component     = ComponentType::ReturnError;
+    err.operation     = MapOperation::SendAuthenticationInfo;
+    err.imsi          = "262019876543210";
+    err.errorCode     = 5;
+    proxy_->handleMapPayload(map::encode(err));
+
+    // Only one response (the ReturnResult) should have been sent.
+    EXPECT_EQ(sgsn_->sent.size(), 1u);
+    EXPECT_EQ(proxy_->transactions().size(), 0u);
+}
+
+// Expiry of multiple transactions sends an error for each, to the correct client.
+TEST_F(ProxyTest, ExpireMultipleTransactionsSendsErrorsToClients) {
+    auto sgsn = std::make_shared<MockTransport>();
+    auto hlr  = std::make_shared<MockTransport>();
+    Proxy shortProxy(sgsn, hlr, std::chrono::seconds{0});
+    shortProxy.start();
+
+    gsup::GsupMessage req1;
+    req1.type = gsup::MessageType::SendAuthInfoRequest;
+    req1.imsi = "262019000000001";
+    req1.numVectorsRequested = 1;
+    shortProxy.handleGsupPayload(gsup::encode(req1), /*clientId=*/10);
+
+    gsup::GsupMessage req2;
+    req2.type = gsup::MessageType::UpdateLocationRequest;
+    req2.imsi = "262019000000002";
+    shortProxy.handleGsupPayload(gsup::encode(req2), /*clientId=*/20);
+
+    shortProxy.expireSgsnTransactions();
+
+    ASSERT_EQ(sgsn->sent.size(), 2u);
+    // Each client gets the error for its own request type.
+    std::map<ClientId, gsup::MessageType> errors;
+    for (auto& s : sgsn->sent)
+        errors[s.clientId] = gsup::decode(s.data).type;
+    EXPECT_EQ(errors[10], gsup::MessageType::SendAuthInfoError);
+    EXPECT_EQ(errors[20], gsup::MessageType::UpdateLocationError);
+}

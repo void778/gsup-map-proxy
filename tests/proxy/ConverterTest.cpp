@@ -486,3 +486,56 @@ TEST(ConverterTest, GsupPurgeMsErrorToMapReturnError) {
     ASSERT_TRUE(m.errorCode.has_value());
     EXPECT_EQ(*m.errorCode, 9u);
 }
+
+// ── Edge cases ────────────────────────────────────────────────────────────────
+
+// An HLR-initiated GSUP result type (e.g. InsertDataResult) must not be
+// accepted by gsupToMap(), which only handles SGSN-initiated requests.
+TEST(ConverterTest, HlrInitiatedTypeRejectedByGsupToMap) {
+    GsupMessage gsup;
+    gsup.type = MessageType::InsertDataResult; // HLR-initiated result, not a request
+    gsup.imsi = "262019876543210";
+    EXPECT_THROW(gsupToMap(gsup, 1, 1), ConversionError);
+}
+
+// mapToGsup with ReturnError for an unknown/unsupported operation must throw.
+TEST(ConverterTest, ReturnErrorUnknownOperationThrows) {
+    MapMessage m;
+    m.component = ComponentType::ReturnError;
+    m.operation = MapOperation::Unknown;
+    m.imsi      = "262019876543210";
+    EXPECT_THROW(mapToGsup(m), ConversionError);
+}
+
+// mapToGsup with ReturnResult for an unsupported MAP operation must throw.
+TEST(ConverterTest, ReturnResultUnknownOperationThrows) {
+    MapMessage m;
+    m.component = ComponentType::ReturnResult;
+    m.operation = MapOperation::Unknown;
+    m.imsi      = "262019876543210";
+    EXPECT_THROW(mapToGsup(m), ConversionError);
+}
+
+// gsupToMapResult with a non-HLR-initiated type must throw.
+TEST(ConverterTest, GsupToMapResultNonHlrTypeThrows) {
+    GsupMessage gsup;
+    gsup.type = MessageType::SendAuthInfoRequest; // SGSN-initiated, not HLR-response
+    gsup.imsi = "262019876543210";
+    EXPECT_THROW(gsupToMapResult(gsup, 1, 1), ConversionError);
+}
+
+// Multiple conversions with the same IMSI must not corrupt each other
+// (the converter functions are stateless).
+TEST(ConverterTest, MultipleConversionsWithSameImsiAreIndependent) {
+    GsupMessage gsup;
+    gsup.type = MessageType::SendAuthInfoRequest;
+    gsup.imsi = "262019876543210";
+    gsup.numVectorsRequested = 1;
+
+    auto m1 = gsupToMap(gsup, 0x01, 0x01);
+    auto m2 = gsupToMap(gsup, 0x02, 0x02);
+    EXPECT_NE(m1.transactionId, m2.transactionId);
+    EXPECT_NE(m1.invokeId,      m2.invokeId);
+    EXPECT_EQ(m1.imsi, m2.imsi);
+    EXPECT_EQ(m1.operation, m2.operation);
+}

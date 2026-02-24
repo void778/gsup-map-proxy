@@ -156,3 +156,53 @@ TEST(ScccpCodec, FirstByteIsUdtMsgType) {
     auto encoded = encodeUdt(udt);
     EXPECT_EQ(encoded[0], kMsgUdt);
 }
+
+// ── Edge cases ────────────────────────────────────────────────────────────────
+
+// Called-party pointer pointing past end of message must throw.
+TEST(ScccpCodec, CalledPartyPointerOutOfRangeThrows) {
+    SccpUdt udt;
+    udt.calledParty  = makeGtAddress("491");
+    udt.callingParty = makeGtAddress("492");
+    udt.data         = {0x01};
+    auto encoded = encodeUdt(udt);
+    // Overwrite ptr1 with a value that jumps far past end of buffer.
+    encoded[2] = 0xFF;
+    EXPECT_THROW(decodeUdt(encoded), std::runtime_error);
+}
+
+// Data pointer pointing past end of message must throw.
+TEST(ScccpCodec, DataPointerOutOfRangeThrows) {
+    SccpUdt udt;
+    udt.calledParty  = makeGtAddress("491");
+    udt.callingParty = makeGtAddress("492");
+    udt.data         = {0x01};
+    auto encoded = encodeUdt(udt);
+    // Overwrite ptr3 (data pointer) with a large offset.
+    encoded[4] = 0xFF;
+    EXPECT_THROW(decodeUdt(encoded), std::runtime_error);
+}
+
+// Large payload preserved exactly (> 1 byte, tests the length byte path).
+TEST(ScccpCodec, LargeDataPayloadPreserved) {
+    Bytes payload(250, 0x7E);
+    SccpUdt udt;
+    udt.calledParty  = makeGtAddress("49161");
+    udt.callingParty = makeGtAddress("49162");
+    udt.data         = payload;
+    auto decoded = decodeUdt(encodeUdt(udt));
+    EXPECT_EQ(decoded.data, payload);
+}
+
+// SSN boundary values (0 and 255) round-trip correctly.
+TEST(ScccpCodec, SsnBoundaryValuesRoundTrip) {
+    for (uint8_t ssn : {uint8_t(0), uint8_t(255)}) {
+        SccpUdt udt;
+        udt.calledParty  = makeGtAddress("491", ssn, true);
+        udt.callingParty = makeGtAddress("492");
+        udt.data         = {0x00};
+        auto decoded = decodeUdt(encodeUdt(udt));
+        ASSERT_TRUE(decoded.calledParty.ssnPresent);
+        EXPECT_EQ(decoded.calledParty.ssn, ssn);
+    }
+}

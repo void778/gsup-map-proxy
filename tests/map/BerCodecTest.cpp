@@ -161,3 +161,54 @@ TEST(BerIntTest, OperationCodes) {
 TEST(BerIntTest, DecodeEmptyThrows) {
     EXPECT_THROW(decodeInt({}), std::runtime_error);
 }
+
+// ── Edge cases ────────────────────────────────────────────────────────────────
+
+// readTlv with only a tag byte and no length should throw (BufferReader
+// throws std::out_of_range when reading past end).
+TEST(BerTlvTest, TruncatedAfterTagThrows) {
+    Bytes b = {0x04}; // tag only, no length
+    BufferReader r(b);
+    Bytes out;
+    EXPECT_THROW(readTlv(r, out), std::exception);
+}
+
+// readTlv with tag+length but fewer payload bytes than length claims.
+TEST(BerTlvTest, TruncatedValueThrows) {
+    BufferWriter w;
+    writeLength(w, 10); // claims 10 value bytes
+    Bytes buf = {0x04};
+    buf.insert(buf.end(), w.bytes().begin(), w.bytes().end());
+    buf.push_back(0xAA); // only 1 value byte instead of 10
+    BufferReader r(buf);
+    Bytes out;
+    EXPECT_THROW(readTlv(r, out), std::exception);
+}
+
+// readLength with 0x84 (claims 4 following length bytes) on a buffer that
+// has none must throw (BufferReader throws std::out_of_range).
+TEST(BerLengthTest, MultiByteFormWithNoFollowingBytesThrows) {
+    Bytes b = {0x84}; // says 4 length bytes follow, but none do
+    BufferReader r(b);
+    EXPECT_THROW(readLength(r), std::exception);
+}
+
+// Large negative integer round-trip.
+TEST(BerIntTest, LargeNegativeRoundTrip) {
+    for (int64_t v : {int64_t(-128), int64_t(-129), int64_t(-256), int64_t(-32768), int64_t(-2147483648LL)}) {
+        EXPECT_EQ(decodeInt(encodeInt(v)), v) << "v=" << v;
+    }
+}
+
+// Zero-length TLV value round-trips correctly (already covered by EmptyValue
+// but verify via writeTlv + readTlv symmetry explicitly).
+TEST(BerTlvTest, ZeroLengthValueRoundTrip) {
+    BufferWriter w;
+    writeTlv(w, 0x05, {});
+    BufferReader r(w.bytes());
+    Bytes out;
+    uint8_t tag = readTlv(r, out);
+    EXPECT_EQ(tag, 0x05u);
+    EXPECT_TRUE(out.empty());
+    EXPECT_FALSE(r.remaining()); // reader fully consumed
+}
