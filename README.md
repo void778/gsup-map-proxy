@@ -266,7 +266,7 @@ Pure functions with no side effects that translate between GSUP and MAP:
 | `mapInvokeToGsup()` | HLR-initiated | MAP Invoke from HLR → GSUP request to SGSN |
 | `gsupToMapResult()` | HLR-initiated | GSUP result/error from SGSN → MAP ReturnResult/Error |
 
-Being pure functions makes the converter trivially testable — all 40+
+Being pure functions makes the converter trivially testable — all 45
 converter tests exercise these functions directly with no I/O or mocks
 required.
 
@@ -709,8 +709,8 @@ ctest --test-dir build --parallel 4
 Expected output:
 
 ```
-100% tests passed, 0 tests failed out of 191
-Total Test time (real) =   3.xx sec
+100% tests passed, 0 tests failed out of 220
+Total Test time (real) =   1.xx sec
 ```
 
 ### Run a single test binary
@@ -749,7 +749,7 @@ ls build/tests/
 | `map_transport_test` | M3UA state machine, heartbeat | Transport |
 | `proxy_end_to_end_test` | Full stack with mock SG | Integration |
 
-**191 tests total — 100% passing.**
+**220 tests total — 100% passing.**
 
 ### End-to-end test architecture
 
@@ -778,7 +778,7 @@ current percentage, or browse per-file details at:
 > https://codecov.io/gh/void778/gsup-map-proxy
 
 The CI coverage job builds with `--coverage -O0` using gcc-12, runs all
-191 tests, then uploads `src/**` line coverage only (third-party headers
+220 tests, then uploads `src/**` line coverage only (third-party headers
 and generated code are excluded).
 
 Uncovered lines are almost exclusively error-recovery paths that require
